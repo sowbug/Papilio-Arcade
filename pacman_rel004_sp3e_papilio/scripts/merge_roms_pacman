@@ -1,0 +1,97 @@
+#!/bin/bash
+
+# Written for Gadget Factories Papilio Arcade
+# Copyright 2001 Gadget Factory, LLC
+# http://www.gadgetfactory.net
+# License Creative Commons Attribution
+
+# SHA1 sums of files required
+# 8d0268dee78e47c712202b0ec4f1f51109b1f2a5 *82s123.7f
+# bbcec0570aeceb582ff8238a4bc8546a23430081 *82s126.1m
+# 0c4d0bee858b97632411c440bea6948a74759746 *82s126.3m
+# 19097b5f60d1030f8b82d9f1d3a241f93e5c75d6 *82s126.4a
+# 87117ba5082cd7a615b4ec7c02dd819003fbd669 *namcopac.6e
+# 326dbbf94c6fa2e96613dedb53702f8832b47d59 *namcopac.6f
+# 7e1945f6eb51f2e51806d0439f975f7a2889b9b8 *namcopac.6h
+# 01b4c38108d9dc4e48da4f8d685248e1e6821377 *namcopac.6j
+# 06ef227747a440831c9a3a613b76693d52a2f0a9 *pacman.5e
+# 4a937ac02216ea8c96477d4a15522070507fb599 *pacman.5f
+
+ROM_PATH_SRC=../roms/pacman
+BIT_FILE_PATH=../bit_files
+TEMP_PATH=../scripts/tmp
+ROMGEN_PATH=../romgen_source
+DATA2MEM=../scripts/bin/data2mem
+
+mkdir -p $TEMP_PATH
+
+# Bit file to merge the ROMs into. Uncomment the bit file for 
+# the Papilio Arcade board you are using.
+# This is for the papilio Logic with LX9 chip
+# set bit_file=pacman_hardware_papilio_logic_lx9
+# this is for the Papilio One with 500K chip
+BIT_FILE=pacman_hardware_p1_500K
+
+OUTPUT_BITFILE=pacman_on_${BIT_FILE}.bit
+
+# concatenate consecutive ROM regions
+cat $ROM_PATH_SRC/pacman.5e \
+    $ROM_PATH_SRC/pacman.5f \
+    > $TEMP_PATH/gfx1.bin
+cat $ROM_PATH_SRC/namcopac.6e \
+    $ROM_PATH_SRC/namcopac.6f \
+    $ROM_PATH_SRC/namcopac.6h \
+    $ROM_PATH_SRC/namcopac.6j \
+    > $TEMP_PATH/main.bin
+
+# generate RTL code for small PROMS
+$ROMGEN_PATH/romgen $ROM_PATH_SRC/82s126.1m     PROM1_DST  9 m r e \
+    > $TEMP_PATH/prom1_dst.mem
+$ROMGEN_PATH/romgen $ROM_PATH_SRC/82s126.4a     PROM4_DST  8 m r e \
+    > $TEMP_PATH/prom4_dst.mem
+$ROMGEN_PATH/romgen $ROM_PATH_SRC/82s123.7f     PROM7_DST  4 m r e \
+    > $TEMP_PATH/prom7_dst.mem
+# $ROMGEN_PATH/romgen $ROM_PATH_SRC/82s126.1m     PROM1_DST  9 c     > $TEMP_PATH/prom1_dst.mem
+# $ROMGEN_PATH/romgen $ROM_PATH_SRC/82s126.4a     PROM4_DST  8 c     > $TEMP_PATH/prom4_dst.mem
+# $ROMGEN_PATH/romgen $ROM_PATH_SRC/82s123.7f     PROM7_DST  4 c     > $TEMP_PATH/prom7_dst.mem
+
+# generate RAMB structures for larger ROMS
+$ROMGEN_PATH/romgen $TEMP_PATH/gfx1.bin          GFX1      13 m r e \
+    > $TEMP_PATH/gfx1.mem
+$ROMGEN_PATH/romgen $TEMP_PATH/main.bin          ROM_PGM_0 14 m r e \
+    > $TEMP_PATH/rom0.mem
+
+# this is ROM area not used but required
+$ROMGEN_PATH/romgen $TEMP_PATH/gfx1.bin          ROM_PGM_1 13 m r e \
+    > $TEMP_PATH/rom1.mem
+
+$DATA2MEM -bm $BIT_FILE_PATH/${BIT_FILE}_bd.bmm \
+    -bt $BIT_FILE_PATH/$BIT_FILE.bit \
+    -bd $TEMP_PATH/prom1_dst.mem tag avrmap.rom_audio1m \
+    -o b $TEMP_PATH/out1.bit
+$DATA2MEM -bm $BIT_FILE_PATH/${BIT_FILE}_bd.bmm \
+    -bt $TEMP_PATH/out1.bit \
+    -bd $TEMP_PATH/prom4_dst.mem tag avrmap.rom_col4a \
+    -o b $TEMP_PATH/out2.bit
+$DATA2MEM -bm $BIT_FILE_PATH/${BIT_FILE}_bd.bmm \
+    -bt $TEMP_PATH/out2.bit \
+    -bd $TEMP_PATH/prom7_dst.mem tag avrmap.rom_col7f \
+    -o b $TEMP_PATH/out3.bit
+$DATA2MEM -bm $BIT_FILE_PATH/${BIT_FILE}_bd.bmm \
+    -bt $TEMP_PATH/out3.bit \
+    -bd $TEMP_PATH/gfx1.mem tag avrmap.rom_gfx1 \
+    -o b $TEMP_PATH/out4.bit
+$DATA2MEM -bm $BIT_FILE_PATH/${BIT_FILE}_bd.bmm \
+    -bt $TEMP_PATH/out4.bit \
+    -bd $TEMP_PATH/rom0.mem tag avrmap.rom_code \
+    -o b $BIT_FILE_PATH/$OUTPUT_BITFILE
+
+# $DATA2MEM -bm $BIT_FILE_PATH/$BIT_FILE_bd.bmm -bt $TEMP_PATH/out4.bit -bd $TEMP_PATH/rom0.mem tag avrmap.rom_code -o b $TEMP_PATH/out5.bit
+# $DATA2MEM -bm $BIT_FILE_PATH/$BIT_FILE_bd.bmm -bt $TEMP_PATH/out5.bit -bd $TEMP_PATH/rom1.mem tag avrmap.rom_wiz -o b $BIT_FILE_PATH/$OUTPUT_BITFILE
+
+# Cleanup
+rm $TEMP_PATH/out*.bit
+rm $TEMP_PATH/*.mem
+rm $TEMP_PATH/*.bin
+
+echo "Merged bit file is located at: $BIT_FILE_PATH/$OUTPUT_BITFILE"
